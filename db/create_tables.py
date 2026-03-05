@@ -1,16 +1,5 @@
-import os
-from dotenv import load_dotenv
 import psycopg2
-
-load_dotenv()
-
-DB_CONFIG = {
-    "dbname": os.getenv("DB_NAME"),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-    "host": os.getenv("DB_HOST"),
-    "port": os.getenv("DB_PORT")
-}
+from config import DB_CONFIG
 
 def create_tables():
     conn = psycopg2.connect(**DB_CONFIG)
@@ -18,7 +7,7 @@ def create_tables():
 
     # Users table
     cursor.execute("""
-    CREATE TABLE users (
+    CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         email TEXT UNIQUE NOT NULL,
         full_name TEXT,
@@ -56,7 +45,7 @@ def create_tables():
 
     # Events table
     cursor.execute("""
-    CREATE TABLE events (
+    CREATE TABLE IF NOT EXISTS events (
         event_id TEXT PRIMARY KEY,
         session_id UUID REFERENCES sessions(session_id) ON DELETE CASCADE,
         user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
@@ -90,25 +79,6 @@ def create_tables():
     print("✅ Tables created successfully.")
 
 
-def drop_all_tables():
-    conn = psycopg2.connect(**DB_CONFIG)
-    cur = conn.cursor()
-
-    cur.execute("""
-        DO $$ DECLARE
-            r RECORD;
-        BEGIN
-            FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-                EXECUTE 'DROP TABLE IF EXISTS public.' || quote_ident(r.tablename) || ' CASCADE';
-            END LOOP;
-        END $$;
-    """)
-    conn.commit()
-    cur.close()
-    conn.close()
-    print("✅ All tables dropped successfully.")
-
 if __name__ == "__main__":
-    drop_all_tables()
     create_tables()
-    print("Database schema reset complete!")
+    print("Database schema created.")

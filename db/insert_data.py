@@ -1,13 +1,11 @@
-import os
 import json
 import csv
 import psycopg2
-from dotenv import load_dotenv
-from pathlib import Path
+from psycopg2.extras import execute_batch
 from datetime import datetime
 from tqdm import tqdm
 import logging
-from psycopg2.extras import execute_batch
+from config import DB_CONFIG
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,19 +13,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-
-DB_CONFIG = {
-    "host": os.getenv("DB_HOST"),
-    "port": os.getenv("DB_PORT"),
-    "dbname": os.getenv("DB_NAME"),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-}
-
-BASE_DIR = Path(__file__).parent
-TELEMETRY_FILE = BASE_DIR / "data/telemetry_logs.jsonl"
-USERS_CSV = BASE_DIR / "data/employees.csv"
+TELEMETRY_FILE = "data/telemetry_logs.jsonl"
+USERS_CSV = "data/employees.csv"
 
 
 def parse_timestamp(ts):
