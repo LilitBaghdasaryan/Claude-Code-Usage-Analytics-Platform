@@ -90,10 +90,27 @@ SELECT
     s.user_id,
     u.full_name AS user_name,
     DATE(ev.event_timestamp) AS day,
-    SUM(CAST(ev.input_tokens AS INTEGER) + CAST(ev.output_tokens AS INTEGER)) AS total_tokens
+    SUM(CAST(ev.input_tokens AS INTEGER) + CAST(ev.output_tokens AS INTEGER)) AS total_tokens,
+    COUNT(*) AS event_count,
+    AVG(CAST(ev.duration_ms AS FLOAT)) AS avg_duration_ms,
+    AVG(CAST(ev.cost_usd AS FLOAT)) AS avg_cost_usd,
+    COUNT(DISTINCT ev.session_id) AS session_count
 FROM events ev
 JOIN sessions s ON ev.session_id = s.session_id
 JOIN users u ON s.user_id = u.user_id
 GROUP BY s.user_id, u.full_name, day
 ORDER BY day;
+"""
+
+TOKEN_BY_LEVEL = """
+SELECT 
+    u.level,
+    SUM(CAST(ev.input_tokens AS INTEGER)) AS total_input_tokens,
+    SUM(CAST(ev.output_tokens AS INTEGER)) AS total_output_tokens,
+    SUM(CAST(ev.input_tokens AS INTEGER) + CAST(ev.output_tokens AS INTEGER)) AS total_tokens
+FROM events ev
+JOIN sessions s ON ev.session_id = s.session_id
+JOIN users u ON s.user_id = u.user_id
+GROUP BY u.level
+ORDER BY total_tokens DESC;
 """

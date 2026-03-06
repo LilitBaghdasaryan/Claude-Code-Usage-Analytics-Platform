@@ -12,4 +12,5 @@ Use the sidebar to navigate between sections:
 - Cost Analysis
 - User Analysis
 - Events and Tools
+- Anomaly Detection        
 """)

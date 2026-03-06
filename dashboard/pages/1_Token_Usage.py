@@ -41,3 +41,14 @@ if df_time.empty:
 else:
     df_time["total_tokens"] = pd.to_numeric(df_time["total_tokens"], errors="coerce").fillna(0)
     plot_line(df_time, "period", "total_tokens", f"Token Usage Over Time ({agg_option})", xlabel="Time", ylabel="Total Tokens")
+
+# Token Consumption by Level
+st.header("Token Consumption by Level")
+df_level = run_query(q.TOKEN_BY_LEVEL)
+if df_level.empty:
+    st.warning("No data available.")
+else:
+    df_level["level"] = df_level["level"].fillna("Unknown")
+    df_level["total_tokens"] = pd.to_numeric(df_level["total_tokens"], errors="coerce").fillna(0)
+    plot_bar(df_level, "level", "total_tokens", "Total Token Usage by Level", xlabel="Level", ylabel="Total Tokens")
+    plot_pie(df_level, "total_tokens", "level", "Token Usage Share by Level")
