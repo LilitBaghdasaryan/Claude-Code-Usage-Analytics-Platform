@@ -9,7 +9,7 @@ def plot_bar(df, x, y, title, xlabel=None, ylabel=None, rotate=True):
     ax.set_ylabel(ylabel or y)
     if rotate:
         plt.xticks(rotation=45, ha="right")
-    st.pyplot(fig)
+    st.pyplot(fig, width='content')
 
 def plot_line(df, x, y, title, xlabel=None, ylabel=None, rotate=True):
     fig, ax = plt.subplots(figsize=(5,3.5))
@@ -19,13 +19,13 @@ def plot_line(df, x, y, title, xlabel=None, ylabel=None, rotate=True):
     ax.set_ylabel(ylabel or y)
     if rotate:
         plt.xticks(rotation=45, ha="right")
-    st.pyplot(fig)
+    st.pyplot(fig, width='content')
 
 def plot_pie(df, values, labels, title):
     fig, ax = plt.subplots(figsize=(5,3.5))
     ax.pie(df[values], labels=df[labels], autopct="%1.1f%%", startangle=140)
     ax.set_title(title)
-    st.pyplot(fig)
+    st.pyplot(fig, width='content')
 
 def plot_stacked_bar(df, title, xlabel=None, ylabel=None, rotate=True):
     fig, ax = plt.subplots(figsize=(5,3.5))
@@ -40,4 +40,4 @@ def plot_stacked_bar(df, title, xlabel=None, ylabel=None, rotate=True):
     if rotate:
         plt.xticks(rotation=45, ha="right")
     
-    st.pyplot(fig)
+    st.pyplot(fig, width='content')

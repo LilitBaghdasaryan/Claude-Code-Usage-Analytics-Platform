@@ -26,7 +26,18 @@ def parse_timestamp(ts):
         return None
 
 
-def load_users_from_csv(cur):
+def is_db_populated(cur):
+    tables = ["events", "sessions", "users", "resources"]
+
+    for table in tables:
+        cur.execute(f"SELECT COUNT(*) FROM {table}")
+        if cur.fetchone()[0] == 0:
+            return False
+
+    return True
+
+
+def insert_users(cur):
     logger.info("Loading users from CSV...")
     with open(USERS_CSV, newline="", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
@@ -46,33 +57,28 @@ def load_users_from_csv(cur):
                     row.get("location"),
                 ),
             )
-    logger.info("Users loaded.")
+    logger.info("Users inserted.")
 
 
 def insert_sessions_events_resources(cur):
-    # preload users
     logger.info("Preloading users into memory...")
     cur.execute("SELECT user_id, email FROM users")
     users_map = {email: user_id for user_id, email in cur.fetchall()}
     logger.info(f"Loaded {len(users_map)} users.")
 
-    # preload existing resources
     logger.info("Preloading existing resources...")
     cur.execute("""
         SELECT resource_id, host_name, host_arch, os_type, os_version, service_name, service_version
         FROM resources
     """)
     resource_map = {tuple(row[1:]): row[0] for row in cur.fetchall()}
-    new_resources_batch = []
 
-    total_lines = sum(1 for _ in open(TELEMETRY_FILE, "r", encoding="utf-8"))
-    events_batch = []
     sessions_batch = []
-
+    events_batch = []
     processed_events = 0
 
     with open(TELEMETRY_FILE, "r", encoding="utf-8") as f:
-        for line in tqdm(f, total=total_lines, desc="Processing telemetry"):
+        for line in tqdm(f, desc="Processing telemetry"):
             log = json.loads(line)
             for log_event in log.get("logEvents", []):
                 processed_events += 1
@@ -80,7 +86,8 @@ def insert_sessions_events_resources(cur):
                 message_raw = log_event.get("message", "{}")
                 try:
                     message = json.loads(message_raw)
-                except:
+                except json.JSONDecodeError:
+                    logger.warning(f"Skipping malformed JSON on event {event_id}")
                     continue
 
                 body = message.get("body")
@@ -95,15 +102,11 @@ def insert_sessions_events_resources(cur):
                 if not session_id or not user_email or not event_id:
                     continue
 
-                # get user_id
                 user_id = users_map.get(user_email)
                 if not user_id:
-                    raise ValueError(
-                        f"Unknown user: {user_email} "
-                        f"(session_id={session_id}, event_id={event_id})"
-                    )
+                    logger.warning(f"Skipping unknown user: {user_email} (event_id={event_id})")
+                    continue
 
-                # deduplicate resource
                 resource_key = (
                     resource.get("host.name"),
                     resource.get("host.arch"),
@@ -112,87 +115,45 @@ def insert_sessions_events_resources(cur):
                     resource.get("service.name"),
                     resource.get("service.version"),
                 )
-                resource_id = resource_map.get(resource_key)
-                if not resource_id:
-                    new_resources_batch.append(resource_key)
+                if resource_key not in resource_map:
+                    cur.execute(
+                        """
+                        INSERT INTO resources (
+                            host_name, host_arch, os_type, os_version,
+                            service_name, service_version
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (host_name, host_arch, os_type, os_version, service_name, service_version)
+                        DO UPDATE SET service_name = EXCLUDED.service_name
+                        RETURNING resource_id
+                        """,
+                        resource_key,
+                    )
+                    resource_map[resource_key] = cur.fetchone()[0]
 
-                # session batch
                 sessions_batch.append(
                     (session_id, user_id, terminal_type, event_timestamp)
                 )
-
-                # event batch
-                events_batch.append(
-                    (
-                        event_id,
-                        session_id,
-                        user_id,
-                        resource_key,  # tmp key
-                        attrs.get("event.name") or body,
-                        event_timestamp,
-                        body,
-                        attrs.get("prompt_length"),
-                        attrs.get("model"),
-                        attrs.get("input_tokens"),
-                        attrs.get("output_tokens"),
-                        attrs.get("cache_creation_tokens"),
-                        attrs.get("cache_read_tokens"),
-                        attrs.get("cost_usd"),
-                        attrs.get("duration_ms"),
-                        attrs.get("decision"),
-                        attrs.get("decision_source"),
-                        attrs.get("tool_name"),
-                    )
-                )
-    new_resources_batch = list({r: None for r in new_resources_batch}.keys())
+                events_batch.append((
+                    event_id, session_id, user_id, resource_map[resource_key],
+                    attrs.get("event.name") or body, event_timestamp, body,
+                    attrs.get("prompt_length"), attrs.get("model"),
+                    attrs.get("input_tokens"), attrs.get("output_tokens"),
+                    attrs.get("cache_creation_tokens"), attrs.get("cache_read_tokens"),
+                    attrs.get("cost_usd"), attrs.get("duration_ms"),
+                    attrs.get("decision"), attrs.get("decision_source"),
+                    attrs.get("tool_name"),
+                ))
 
     logger.info(f"Processed {processed_events} events.")
-    logger.info(f"New resources to insert: {len(new_resources_batch)}")
 
-    # insert new resources
-    if new_resources_batch:
-        execute_batch(
-            cur,
-            """
-            INSERT INTO resources (
-                host_name, host_arch, os_type, os_version,
-                service_name, service_version
-            ) VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING resource_id
-            """,
-            new_resources_batch,
-            page_size=1000,
-        )
-        returned_ids = cur.fetchall()
-        for key, row in zip(new_resources_batch, returned_ids):
-            resource_map[key] = row[0]
-
-    logger.info(f"Total resources after dedup: {len(resource_map)}")
-
-    # insert sessions
-    execute_batch(
-        cur,
-        """
+    execute_batch(cur, """
         INSERT INTO sessions (session_id, user_id, terminal_type, started_at)
         VALUES (%s, %s, %s, %s)
         ON CONFLICT (session_id) DO NOTHING
-        """,
-        sessions_batch,
-        page_size=1000,
-    )
+        """, sessions_batch, page_size=1000)
     logger.info(f"Inserted {len(sessions_batch)} session rows.")
 
-    # replace resource_key with real resource_id
-    final_events_batch = []
-    for event in events_batch:
-        resource_key = event[3]
-        resource_id = resource_map.get(resource_key)
-        final_events_batch.append(event[:3] + (resource_id,) + event[4:])
-
-    # insert events
-    execute_batch(
-        cur,
-        """
+    execute_batch(cur, """
         INSERT INTO events (
             event_id, session_id, user_id, resource_id,
             event_type, event_timestamp, body,
@@ -203,19 +164,18 @@ def insert_sessions_events_resources(cur):
         )
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (event_id) DO NOTHING
-        """,
-        final_events_batch,
-        page_size=1000,
-    )
-    logger.info(f"Inserted {len(final_events_batch)} events.")
-
+        """, events_batch, page_size=1000)
+    logger.info(f"Inserted {len(events_batch)} events.")
 
 def main():
     conn = psycopg2.connect(**DB_CONFIG)
     conn.autocommit = False
     cur = conn.cursor()
     try:
-        load_users_from_csv(cur)
+        if is_db_populated(cur):
+            logger.info("Database already populated, skipping insert.")
+            return
+        insert_users(cur)
         insert_sessions_events_resources(cur)
         conn.commit()
         logger.info("All data loaded successfully.")
