@@ -84,3 +84,16 @@ GROUP BY s.user_id, u.full_name
 ORDER BY total_tokens {order}
 LIMIT 10;
 """
+
+USER_DAILY_TOKENS = """
+SELECT 
+    s.user_id,
+    u.full_name AS user_name,
+    DATE(ev.event_timestamp) AS day,
+    SUM(CAST(ev.input_tokens AS INTEGER) + CAST(ev.output_tokens AS INTEGER)) AS total_tokens
+FROM events ev
+JOIN sessions s ON ev.session_id = s.session_id
+JOIN users u ON s.user_id = u.user_id
+GROUP BY s.user_id, u.full_name, day
+ORDER BY day;
+"""
