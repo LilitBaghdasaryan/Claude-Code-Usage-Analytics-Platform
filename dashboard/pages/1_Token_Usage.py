@@ -50,5 +50,4 @@ if df_level.empty:
 else:
     df_level["level"] = df_level["level"].fillna("Unknown")
     df_level["total_tokens"] = pd.to_numeric(df_level["total_tokens"], errors="coerce").fillna(0)
-    plot_bar(df_level, "level", "total_tokens", "Total Token Usage by Level", xlabel="Level", ylabel="Total Tokens")
-    plot_pie(df_level, "total_tokens", "level", "Token Usage Share by Level")
+    plot_bar(df_level, "level", "total_tokens", "Total Token Usage by Level", xlabel="Level", ylabel="Total Tokens", rotate=False)
